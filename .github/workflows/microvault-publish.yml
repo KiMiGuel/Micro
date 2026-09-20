@@ -1,0 +1,54 @@
+name: MicroVault — build and publish
+
+on:
+  push:
+    branches: [master]
+    paths: ["MicroVault/**"]
+  pull_request:
+    paths: ["MicroVault/**"]
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: MicroVault
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install build twine
+
+      - run: python -m build
+
+      - run: twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microvault-dist
+          path: MicroVault/dist/
+
+  publish:
+    needs: build
+    # Only fires for a GitHub Release whose tag starts with "microvault-v" —
+    # keeps this scoped to MicroVault even after MicroStacks/MicroWallet get
+    # their own release tags in this same monorepo.
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'microvault-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # required for PyPI Trusted Publishing (OIDC) — no API token needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: microvault-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
