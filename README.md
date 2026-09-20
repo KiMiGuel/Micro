@@ -3,8 +3,9 @@
 Root of the Micro project family. Each subdirectory is its own tool with
 its own README:
 
-- **[MicroVault](MicroVault/)** — a local, offline, encrypted CLI vault
-  for API keys.
+- **[MicroVault](MicroVault/)** 👈 start here — a local, offline,
+  encrypted CLI vault for API keys. The most complete project in this
+  repo right now.
 - **[MicroStacks](MicroStacks/)** — a token registry and usage-accounting
   layer that mints revocable stand-in tokens for keys stored in
   MicroVault.
