@@ -1,86 +1,65 @@
-# MicroVault
+<p align="center">
+  <img src="assets/logo.svg" alt="MicroVault" width="600" />
+</p>
 
-A local, offline, encrypted command-line vault for API keys. No server,
-no account, no cloud sync — your keys live in one encrypted file on your
-own machine, unlocked with a master password you choose.
+<p align="center">
+  <b>Your API keys, encrypted, offline, on your terms.</b>
+</p>
 
-> **Status:** pre-release. Not yet published to PyPI.
+---
 
-## How it works
+Let's be honest: you've probably got API keys scattered everywhere. 🫠 A few in a `.env` file. One or two pasted straight into a shell script you meant to clean up. Maybe one sitting in your `.zshrc` in plain text, right where anyone glancing at your screen (or anything that gets its hands on your dotfiles) can read it.
 
-- One master password derives an encryption key via PBKDF2-SHA256
-  (600,000 iterations) with a random salt.
-- Keys are encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256 —
-  tamper-evident).
-- The vault file is written atomically (temp file + rename) so a crash
-  mid-write can't corrupt it, and it's locked to `0600` permissions.
-- Your master password is never stored anywhere. If you lose it, the
-  vault cannot be recovered.
+MicroVault fixes that with the simplest thing that could possibly work: one encrypted file, one password only you know, and a CLI that gets your keys in and out without ever leaving them lying around.
 
-## Install
+No account to create. No server to trust. No cloud sync to worry about getting breached. It's just you, your terminal, and a vault that only opens for you.
+
+## 🔐 What's actually happening under the hood
+
+- Your master password runs through **PBKDF2-SHA256 with 600,000 iterations** to derive an encryption key — that's deliberately expensive, so brute-forcing it isn't cheap either.
+- Every key is encrypted at rest with **Fernet** (AES-128-CBC + HMAC-SHA256), which means the vault file isn't just unreadable without the password — it's tamper-evident too.
+- Writes are **atomic**. If your machine crashes or loses power mid-save, you get the old file or the new file, never a corrupted mess in between.
+- Every save **auto-snapshots a backup**, so "oops, I didn't mean to delete that" is a `restore` away, not a disaster.
+- Your master password is **never written anywhere**. Not to disk, not to a log, not to memory longer than it has to be. If you forget it, nobody — including us — can get your keys back. That's the deal: real security means real consequences for losing the password.
+
+## ✨ Why you'll actually want to use this
+
+- **Add a key without it ever touching your screen.** API key entry is a hidden prompt, same as typing a password — it never echoes, never lands in your shell history.
+- **Name your services whatever you want.** `openai`, `aws`, `that-weird-internal-tool`, doesn't matter — there's no fixed list to fight with.
+- **Bulk import from an existing file.** Already have a pile of keys in a text file? MicroVault's importer handles `NAME=value`, `NAME: value`, `NAME value`, even `export NAME=value` — and it shows you exactly what it parsed *before* touching your vault.
+- **Pull keys straight into your shell**, on demand, without ever putting a plaintext secret in your `.zshrc`:
+
+  ```bash
+  eval "$(microvault env)"
+  ```
+
+  One line, and every stored key becomes a real environment variable for that session — gone the moment you close the terminal.
+- **An arrow-key menu if you don't feel like typing.** Hit Enter at the prompt with nothing typed, and you get a navigable list. Prefer typing `add openai` directly? That still works exactly the same.
+- **Colorful, readable output** — because staring at a wall of monochrome CLI text all day is nobody's idea of a good time.
+
+## 🚀 Try it
 
 ```bash
-pip install microvault
-```
-
-(Or, from a local checkout: `pip install -e .`)
-
-## Usage
-
-```bash
+git clone https://github.com/KiMiGuel/Micro.git
+cd Micro/MicroVault
+pip install -e .
 microvault
 ```
 
-Prompts for your master password (creating a new vault on first run),
-then drops you into a command loop:
-
-| Command  | Does |
-|----------|------|
-| `add`    | Store a new API key under a service name you type yourself — any name, no fixed list |
-| `get`    | Print a stored key |
-| `list`   | List services with keys masked (`sk-t...abcd`) |
-| `update` | Replace a stored key |
-| `delete` | Remove a stored key |
-| `mint`   | Mint a [MicroStacks](../MicroStacks/) token for a stored service |
-| `tokens` | List MicroStacks tokens and their usage |
-| `revoke` | Revoke a MicroStacks token |
-| `exit`   | Quit |
-
-API key values are entered with hidden input (like a password prompt) —
-they never echo to your screen or land in shell history.
-
-## Shell integration
-
-To use a stored key from your shell without ever putting the plaintext
-key in a dotfile:
+That's it. First run asks you to set a master password, and you're in.
 
 ```bash
-eval "$(microvault env)"       # exports every stored key as SERVICE_API_KEY
-eval "$(microvault env openai)" # exports just one
+> add openai
+API Key (input hidden): ••••••••••••••••••••••
+Saved openai.
 ```
 
-This prompts for your master password (on stderr, so it doesn't pollute
-the `eval`), then prints `export SERVICE_API_KEY=...` lines to stdout
-only. Add a shell function like this to unlock on demand:
+*(PyPI release is coming — `pip install microvault` will work directly once it's live.)*
 
-```bash
-mv-unlock() {
-  local out
-  out=$(microvault env) || return 1
-  eval "$out"
-  echo "MicroVault: keys loaded into this shell."
-}
-```
+## 📦 Storage
 
-Once exported, the key is plaintext in that shell's environment for the
-duration of the session — that's inherent to how any env-var-based
-credential works, not specific to MicroVault.
+Everything lives at `~/.microvault/` by default. Want it somewhere else? Set `MICROVAULT_HOME` and it follows you there.
 
-## Storage location
+## 📄 License
 
-By default, data is stored under `~/.microvault/`. Override with the
-`MICROVAULT_HOME` environment variable to use a different location.
-
-## License
-
-Apache License 2.0 — see the repository root [LICENSE](../LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).
