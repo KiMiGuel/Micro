@@ -6,6 +6,12 @@
   <b>Your API keys, encrypted, offline, on your terms.</b>
 </p>
 
+<p align="center">
+  <a href="https://pypi.org/project/microvault/"><img src="https://img.shields.io/pypi/v/microvault.svg" alt="PyPI version" /></a>
+  <a href="https://pypi.org/project/microvault/"><img src="https://img.shields.io/pypi/pyversions/microvault.svg" alt="Python versions" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
+</p>
+
 ---
 
 Let's be honest: you've probably got API keys scattered everywhere. 🫠 A few in a `.env` file. One or two pasted straight into a shell script you meant to clean up. Maybe one sitting in your `.zshrc` in plain text, right where anyone glancing at your screen (or anything that gets its hands on your dotfiles) can read it.
@@ -40,9 +46,7 @@ No account to create. No server to trust. No cloud sync to worry about getting b
 ## 🚀 Try it
 
 ```bash
-git clone https://github.com/KiMiGuel/MicroVault.git
-cd MicroVault
-pip install -e .
+pip install microvault
 microvault
 ```
 
@@ -53,8 +57,6 @@ That's it. First run asks you to set a master password, and you're in.
 API Key (input hidden): ••••••••••••••••••••••
 Saved openai.
 ```
-
-*(PyPI release is coming — `pip install microvault` will work directly once it's live.)*
 
 ## 📦 Storage
 
