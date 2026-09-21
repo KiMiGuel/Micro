@@ -40,6 +40,15 @@ No account to create. No server to trust. No cloud sync to worry about getting b
   ```
 
   One line, and every stored key becomes a real environment variable for that session — gone the moment you close the terminal.
+- **Other tools can call their APIs straight from what's in MicroVault** — no copy-pasting a key into a separate config file somewhere else. The catch: a lot of real tools expect a specific env var name that isn't the obvious one (WPScan wants `WPSCAN_API_TOKEN`, VirusTotal's CLI wants the genuinely odd `VTCLI_APIKEY`, `gh` wants `GH_TOKEN`). The `alias` command fixes that — set the exact name a tool expects once, and `microvault env` exports it correctly from then on:
+
+  ```bash
+  > alias wpscan
+  Export name for wpscan (suggested: WPSCAN_API_TOKEN — press Enter to accept):
+  wpscan will now export as WPSCAN_API_TOKEN.
+  ```
+
+  MicroVault recognizes a handful of common tools and suggests the right name — but `alias` always accepts anything you type, so this works for literally any tool, known or not.
 - **An arrow-key menu if you don't feel like typing.** Hit Enter at the prompt with nothing typed, and you get a navigable list. Prefer typing `add openai` directly? That still works exactly the same.
 - **Colorful, readable output** — because staring at a wall of monochrome CLI text all day is nobody's idea of a good time.
 
