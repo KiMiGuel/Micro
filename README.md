@@ -40,8 +40,8 @@ No account to create. No server to trust. No cloud sync to worry about getting b
 ## 🚀 Try it
 
 ```bash
-git clone https://github.com/KiMiGuel/Micro.git
-cd Micro/MicroVault
+git clone https://github.com/KiMiGuel/MicroVault.git
+cd MicroVault
 pip install -e .
 microvault
 ```
