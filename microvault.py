@@ -77,6 +77,7 @@ def print_banner():
 
 MICROVAULT_HOME = os.environ.get("MICROVAULT_HOME", os.path.expanduser("~/.microvault"))
 VAULT_FILE = os.path.join(MICROVAULT_HOME, "vault.enc")
+ALIASES_FILE = os.path.join(MICROVAULT_HOME, "aliases.json")
 
 MICROSTACKS_HOME = os.environ.get("MICROSTACKS_HOME", os.path.expanduser("~/.microstacks"))
 MICROSTACKS_FILE = os.path.join(MICROSTACKS_HOME, "microstacks.enc")
@@ -174,9 +175,75 @@ def mask_key(key: str) -> str:
 
 
 def env_var_name(service: str) -> str:
-    """Maps a service name to a shell env var, e.g. 'openai' -> 'OPENAI_API_KEY'."""
-    sanitized = re.sub(r'[^A-Za-z0-9]', '_', service.strip())
+    """Maps a service name to a default shell env var, e.g. 'openai' ->
+    'OPENAI_API_KEY'. Strips a trailing _api/_key/_api_key from the service
+    name first, so a name like 'shodan_api' produces 'SHODAN_API_KEY'
+    instead of doubling up as 'SHODAN_API_API_KEY'. This is just the
+    default — many real tools expect a completely different name (see
+    KNOWN_ALIASES / the 'alias' command), which this can't guess on its
+    own and isn't meant to."""
+    name = service.strip()
+    name = re.sub(r'(?i)_api_key$', '', name)
+    name = re.sub(r'(?i)_key$', '', name)
+    name = re.sub(r'(?i)_api$', '', name)
+    name = name.strip('_')
+    sanitized = re.sub(r'[^A-Za-z0-9]', '_', name)
     return f"{sanitized.upper()}_API_KEY"
+
+
+# A convenience nudge only, seeded from researching real tools' actual
+# conventions (verified, not guessed — several surprised us, e.g. VirusTotal's
+# CLI wants VTCLI_APIKEY, not VT_API_KEY). Matched loosely against the
+# service name; 'alias' always accepts a fully custom name regardless of
+# whether a service is in this table, so this list being incomplete never
+# blocks anyone — it just means no suggestion is offered.
+KNOWN_ALIASES = {
+    "github": "GH_TOKEN",
+    "git": "GH_TOKEN",
+    "shodan": "SHODAN_API_KEY",
+    "virustotal": "VTCLI_APIKEY",
+    "wpscan": "WPSCAN_API_TOKEN",
+    "chaos": "PDCP_API_KEY",
+    "ipinfo": "IPINFO_TOKEN",
+    "kimi": "MOONSHOT_API_KEY",
+    "moonshot": "MOONSHOT_API_KEY",
+    "serpapi": "SERPAPI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gpt": "OPENAI_API_KEY",
+    "numverify": "NUMVERIFY_API_KEY",
+}
+
+
+def suggest_alias(service: str):
+    """Loose substring match against KNOWN_ALIASES. Returns None (not a
+    guess) when nothing matches — the service just uses the default name."""
+    key = re.sub(r'[^a-z0-9]', '', service.lower())
+    for pattern, env_name in KNOWN_ALIASES.items():
+        if pattern in key:
+            return env_name
+    return None
+
+
+def load_aliases() -> dict:
+    """Aliases are env-var NAMES, not secrets — plain JSON, no encryption,
+    no password needed to read or write them."""
+    if not os.path.exists(ALIASES_FILE):
+        return {}
+    try:
+        with open(ALIASES_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_aliases(aliases: dict):
+    os.makedirs(os.path.dirname(ALIASES_FILE), exist_ok=True)
+    tmp_path = ALIASES_FILE + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(aliases, f, indent=2, sort_keys=True)
+    os.replace(tmp_path, ALIASES_FILE)
 
 
 def parse_key_file(path: str):
@@ -248,13 +315,15 @@ def cmd_env(target_service: str = None):
             sys.exit(1)
         items = [(target_service, vault[target_service])]
 
+    aliases = load_aliases()
     for service, api_key in items:
-        print(f"export {env_var_name(service)}={shlex.quote(api_key)}")
+        var_name = aliases.get(service, env_var_name(service))
+        print(f"export {var_name}={shlex.quote(api_key)}")
 
 
 MENU_COMMANDS = [
     "add", "get", "list", "update", "delete",
-    "import", "backup", "restore",
+    "import", "backup", "restore", "alias",
     "mint", "tokens", "revoke",
     "help", "exit",
 ]
@@ -299,6 +368,14 @@ INTERACTIVE COMMANDS
   restore [file]          Overwrite the current vault with a backup file.
                          Lists available backups if none given. Exit and
                          relaunch afterward to use the restored vault.
+  alias [service]         Override the env var name `env` uses for a
+                         service — many real tools expect something other
+                         than the default SERVICE_API_KEY (e.g. WPScan
+                         wants WPSCAN_API_TOKEN, VirusTotal's CLI wants
+                         VTCLI_APIKEY). Suggests a known name when it
+                         recognizes the service; always accepts any
+                         custom name; blank input clears an existing alias.
+                         e.g. `alias wpscan`
   mint [service]         Mint a MicroStacks token for a stored service.
                          e.g. `mint openai`
   tokens                 List MicroStacks tokens and their usage.
@@ -329,6 +406,8 @@ def cli():
             return
         save_vault(vault, salt, key)
 
+    aliases = load_aliases()
+
     # MicroStacks is a separate encrypted store; only unlock it the first time
     # a mint/tokens/revoke command is actually used, so a problem with it
     # (wrong password against a stray/older file, corruption) can never block
@@ -351,7 +430,7 @@ def cli():
 
     while True:
         print(f"\n{_INFO}Commands: {_DIM}add, get, list, update, delete, import, backup,"
-              f" restore, mint, tokens, revoke, exit {_INFO}(or hit Enter for a menu)")
+              f" restore, alias, mint, tokens, revoke, exit {_INFO}(or hit Enter for a menu)")
         cmd_line = input(f"{_INFO}> {Style.RESET_ALL}").strip()
 
         if not cmd_line:
@@ -469,6 +548,36 @@ def cli():
                         print(f"{_OK}Restored. Exit and relaunch MicroVault to use it.")
                     else:
                         print(f"{_WARN}Cancelled.")
+
+        elif cmd == 'alias':
+            service = arg or input("Service name to set an alias for: ").strip()
+            if service not in vault:
+                print(f"{_ERR}Service not found in vault. Add it first.")
+            else:
+                current = aliases.get(service)
+                suggestion = suggest_alias(service)
+                prompt = f"Export name for {service}"
+                if current:
+                    prompt += f" (currently {current}, blank to clear)"
+                elif suggestion:
+                    prompt += f" (suggested: {suggestion} — press Enter to accept)"
+                else:
+                    prompt += " (blank to cancel)"
+                value = input(f"{prompt}: ").strip()
+                if not value and suggestion and not current:
+                    value = suggestion
+                if not value:
+                    if service in aliases:
+                        del aliases[service]
+                        save_aliases(aliases)
+                        print(f"{_OK}Alias cleared for {service} — back to the default name "
+                              f"({env_var_name(service)}).")
+                    else:
+                        print(f"{_WARN}No change.")
+                else:
+                    aliases[service] = value.upper()
+                    save_aliases(aliases)
+                    print(f"{_OK}{service} will now export as {aliases[service]}.")
 
         elif cmd == 'mint':
             if not ensure_microstacks_loaded():
