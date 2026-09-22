@@ -67,6 +67,50 @@ API Key (input hidden): ••••••••••••••••••�
 Saved openai.
 ```
 
+## 🔌 Using a stored key with any tool
+
+Same four steps, every time, no matter what the tool is:
+
+**1. Store it.**
+
+```
+> add servicename
+API Key (input hidden): [paste the key]
+Saved servicename.
+```
+
+**2. If the tool expects a specific env var name, alias it.** Most tools that auto-read a key from the environment have their own convention — check that tool's docs for the exact name it looks for. If you don't know it, just skip this step; the default (`SERVICENAME_API_KEY`) works fine for anything that lets you pass the key as a flag instead.
+
+```
+> alias servicename
+Export name for servicename (suggested: ..., or type your own):
+servicename will now export as WHATEVER_THE_TOOL_EXPECTS.
+```
+
+**3. Load it into your shell.**
+
+```bash
+eval "$(microvault env servicename)"
+```
+
+**4. Run the tool.** If it auto-reads the env var, you're done — nothing else to type. If it takes the key as a flag instead, pass it explicitly:
+
+```bash
+sometool --api-key "$WHATEVER_THE_TOOL_EXPECTS"
+```
+
+Worked example, using [WPScan](https://github.com/wpscanteam/wpscan) — which auto-reads `WPSCAN_API_TOKEN`, not the default MicroVault would generate:
+
+```bash
+# in MicroVault: add wpscan_api, then alias wpscan_api -> accept the
+# suggested WPSCAN_API_TOKEN, then exit
+
+eval "$(microvault env wpscan_api)"
+wpscan --url https://your-authorized-target.com
+```
+
+No `--api-token` flag needed — WPScan finds `WPSCAN_API_TOKEN` in the environment on its own. Same pattern works for any tool with any env var convention; the alias is what bridges MicroVault's naming to whatever that specific tool actually expects.
+
 ## 📦 Storage
 
 Everything lives at `~/.microvault/` by default. Want it somewhere else? Set `MICROVAULT_HOME` and it follows you there.
