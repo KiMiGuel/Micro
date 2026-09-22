@@ -1,18 +1,43 @@
+"""
+MicroVault CLI — interactive vault shell, env exporter, and process runner.
+
+This module owns all user-facing behavior: the banner, the interactive
+command loop, `microvault env`, and `microvault run`.  Core crypto and
+storage logic lives in core.py; the public importable API lives in vault.py.
+"""
+
 import json
 import os
 import re
 import sys
 import shlex
 import shutil
-import secrets
 import getpass
 from datetime import datetime, timezone
-from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
 from colorama import init as _colorama_init, Fore, Style
 import questionary
+
+from .core import (
+    MICROVAULT_HOME,
+    VAULT_FILE,
+    ALIASES_FILE,
+    MICROSTACKS_HOME,
+    MICROSTACKS_FILE,
+    load_vault,
+    save_vault,
+    snapshot_backup,
+    load_microstacks,
+    save_microstacks,
+    mask_key,
+    env_var_name,
+    KNOWN_ALIASES,
+    suggest_alias,
+    load_aliases,
+    save_aliases,
+    parse_key_file,
+    generate_microstack_token,
+    TOKENS_PER_MICROSTACK,
+)
 
 _colorama_init(autoreset=True)
 
@@ -75,224 +100,8 @@ def print_banner():
     ]
     _print_block_centered(vault_lines, colored_vault, width)
 
-MICROVAULT_HOME = os.environ.get("MICROVAULT_HOME", os.path.expanduser("~/.microvault"))
-VAULT_FILE = os.path.join(MICROVAULT_HOME, "vault.enc")
-ALIASES_FILE = os.path.join(MICROVAULT_HOME, "aliases.json")
 
-MICROSTACKS_HOME = os.environ.get("MICROSTACKS_HOME", os.path.expanduser("~/.microstacks"))
-MICROSTACKS_FILE = os.path.join(MICROSTACKS_HOME, "microstacks.enc")
-
-SALT_SIZE = 16
-PBKDF2_ITERATIONS = 600_000
-TOKENS_PER_MICROSTACK = 1000  # display unit: 1 MicroStack = 1000 underlying LLM tokens
-
-
-def derive_key(password: str, salt: bytes) -> bytes:
-    """Derives a 256-bit Fernet key from the master password and salt."""
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=PBKDF2_ITERATIONS,
-    )
-    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
-
-
-def load_store(path: str, password: str):
-    """Load and decrypt an encrypted JSON store. Returns (data, salt, key), or
-    (None, None, None) on wrong password / corrupted file, or a fresh ({}, salt, key)
-    if the file doesn't exist yet."""
-    if not os.path.exists(path):
-        salt = os.urandom(SALT_SIZE)
-        return {}, salt, derive_key(password, salt)
-
-    with open(path, "rb") as f:
-        raw = f.read()
-
-    if len(raw) <= SALT_SIZE:
-        return None, None, None
-
-    salt, token = raw[:SALT_SIZE], raw[SALT_SIZE:]
-    key = derive_key(password, salt)
-
-    try:
-        data = json.loads(Fernet(key).decrypt(token).decode("utf-8"))
-        return data, salt, key
-    except (InvalidToken, ValueError):
-        return None, None, None
-
-
-def save_store(path: str, data: dict, salt: bytes, key: bytes):
-    """Encrypt and atomically write a store to disk, reusing the session salt/key."""
-    token = Fernet(key).encrypt(json.dumps(data).encode("utf-8"))
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "wb") as f:
-        f.write(salt + token)
-    os.chmod(tmp_path, 0o600)
-    os.replace(tmp_path, path)
-
-
-def snapshot_backup(path: str):
-    """Copies a just-written store to a single rolling backup file in its
-    own backups/ subfolder — a physically separate file from the live
-    store it protects (not nested inside it, which would offer no
-    protection against that exact file being lost or corrupted).
-    Overwritten on every save: protects your most recent change, not
-    deep history — one file, no ambiguity about which one to restore."""
-    backup_dir = os.path.join(os.path.dirname(path), "backups")
-    os.makedirs(backup_dir, exist_ok=True)
-    name = os.path.splitext(os.path.basename(path))[0]
-    backup_path = os.path.join(backup_dir, f"{name}-backup.enc")
-    shutil.copy2(path, backup_path)
-    os.chmod(backup_path, 0o600)
-
-
-def load_vault(password: str):
-    return load_store(VAULT_FILE, password)
-
-
-def save_vault(data: dict, salt: bytes, key: bytes):
-    save_store(VAULT_FILE, data, salt, key)
-    snapshot_backup(VAULT_FILE)
-
-
-def load_microstacks(password: str):
-    return load_store(MICROSTACKS_FILE, password)
-
-
-def save_microstacks(data: dict, salt: bytes, key: bytes):
-    save_store(MICROSTACKS_FILE, data, salt, key)
-    snapshot_backup(MICROSTACKS_FILE)
-
-
-def mask_key(key: str) -> str:
-    """Returns a masked version of the key for display."""
-    if len(key) > 10:
-        return key[:4] + "..." + key[-4:]
-    return "***"
-
-
-def env_var_name(service: str) -> str:
-    """Maps a service name to a default shell env var, e.g. 'openai' ->
-    'OPENAI_API_KEY'. Strips a trailing _api/_key/_api_key from the service
-    name first, so a name like 'shodan_api' produces 'SHODAN_API_KEY'
-    instead of doubling up as 'SHODAN_API_API_KEY'. This is just the
-    default — many real tools expect a completely different name (see
-    KNOWN_ALIASES / the 'alias' command), which this can't guess on its
-    own and isn't meant to."""
-    name = service.strip()
-    name = re.sub(r'(?i)_api_key$', '', name)
-    name = re.sub(r'(?i)_key$', '', name)
-    name = re.sub(r'(?i)_api$', '', name)
-    name = name.strip('_')
-    sanitized = re.sub(r'[^A-Za-z0-9]', '_', name)
-    return f"{sanitized.upper()}_API_KEY"
-
-
-# A convenience nudge only, seeded from researching real tools' actual
-# conventions (verified, not guessed — several surprised us, e.g. VirusTotal's
-# CLI wants VTCLI_APIKEY, not VT_API_KEY). Matched loosely against the
-# service name; 'alias' always accepts a fully custom name regardless of
-# whether a service is in this table, so this list being incomplete never
-# blocks anyone — it just means no suggestion is offered.
-KNOWN_ALIASES = {
-    "github": "GH_TOKEN",
-    "git": "GH_TOKEN",
-    "shodan": "SHODAN_API_KEY",
-    "virustotal": "VTCLI_APIKEY",
-    "wpscan": "WPSCAN_API_TOKEN",
-    "chaos": "PDCP_API_KEY",
-    "ipinfo": "IPINFO_TOKEN",
-    "kimi": "MOONSHOT_API_KEY",
-    "moonshot": "MOONSHOT_API_KEY",
-    "serpapi": "SERPAPI_API_KEY",
-    "gemini": "GEMINI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "gpt": "OPENAI_API_KEY",
-    "numverify": "NUMVERIFY_API_KEY",
-}
-
-
-def suggest_alias(service: str):
-    """Loose substring match against KNOWN_ALIASES. Returns None (not a
-    guess) when nothing matches — the service just uses the default name."""
-    key = re.sub(r'[^a-z0-9]', '', service.lower())
-    for pattern, env_name in KNOWN_ALIASES.items():
-        if pattern in key:
-            return env_name
-    return None
-
-
-def load_aliases() -> dict:
-    """Aliases are env-var NAMES, not secrets — plain JSON, no encryption,
-    no password needed to read or write them."""
-    if not os.path.exists(ALIASES_FILE):
-        return {}
-    try:
-        with open(ALIASES_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def save_aliases(aliases: dict):
-    os.makedirs(os.path.dirname(ALIASES_FILE), exist_ok=True)
-    tmp_path = ALIASES_FILE + ".tmp"
-    with open(tmp_path, "w") as f:
-        json.dump(aliases, f, indent=2, sort_keys=True)
-    os.replace(tmp_path, ALIASES_FILE)
-
-
-def parse_key_file(path: str):
-    """Parses a text file of API keys into {service: key} pairs. Splits each
-    line on the first '=' or ':' found anywhere in it (so a stray space
-    before the separator, e.g. 'google places_API=xyz', doesn't fool the
-    parser); falls back to strict 'name key' whitespace-splitting only when
-    the line has no '=' or ':' at all. Also strips a leading shell 'export'
-    keyword and a trailing '_API_KEY'/'_KEY' suffix on the name. Blank
-    lines and lines starting with '#' are ignored. Returns (parsed_dict,
-    [line numbers that failed to parse])."""
-    entries = {}
-    failed_lines = []
-    with open(path, "r") as f:
-        for lineno, raw_line in enumerate(f, start=1):
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            line = re.sub(r'^export\s+', '', line, flags=re.IGNORECASE)
-
-            sep = re.search(r'[:=]', line)
-            if sep:
-                name, value = line[:sep.start()], line[sep.end():]
-            else:
-                match = re.match(r'^(\S+)\s+(\S+)$', line)
-                if not match:
-                    failed_lines.append(lineno)
-                    continue
-                name, value = match.group(1), match.group(2)
-
-            name = name.strip().strip('"\'')
-            value = value.strip().strip('"\'')
-            if not name or not value:
-                failed_lines.append(lineno)
-                continue
-            name = re.sub(r'(?i)_api_key$', '', name)
-            name = re.sub(r'(?i)_key$', '', name)
-            name = re.sub(r'\s+', '_', name.strip('_'))
-            name = name.lower()
-            entries[name] = value
-    return entries, failed_lines
-
-
-def generate_microstack_token(service: str) -> str:
-    """Mints an opaque bearer token for a service, e.g. 'mstk_openai_4f9a1c2b8e7d'.
-    This is what code/shell would hold instead of the real key once a proxy or
-    call-wrapper resolves it back to the real key at request time (not yet built)."""
-    sanitized = re.sub(r'[^a-z0-9]', '', service.strip().lower())
-    return f"mstk_{sanitized}_{secrets.token_hex(6)}"
+# ── sub-commands ─────────────────────────────────────────────────────────
 
 
 def cmd_env(target_service: str = None):
@@ -303,23 +112,61 @@ def cmd_env(target_service: str = None):
         sys.exit(1)
 
     password = getpass.getpass("Enter master password: ")
-    vault, salt, key = load_vault(password)
-    if vault is None:
+    data, salt, key = load_vault(password)
+    if data is None:
         print("MicroVault: wrong password or corrupted vault.", file=sys.stderr)
         sys.exit(1)
 
-    items = vault.items()
+    items = data.items()
     if target_service:
-        if target_service not in vault:
+        if target_service not in data:
             print(f"MicroVault: service '{target_service}' not found.", file=sys.stderr)
             sys.exit(1)
-        items = [(target_service, vault[target_service])]
+        items = [(target_service, data[target_service])]
 
     aliases = load_aliases()
     for service, api_key in items:
         var_name = aliases.get(service, env_var_name(service))
         print(f"export {var_name}={shlex.quote(api_key)}")
 
+
+def cmd_run(service: str, command: list[str]):
+    """Unlock the vault, inject *service*'s key into the environment, and
+    replace this process with *command*.  The child inherits the key; it is
+    never written to disk or shown on screen."""
+    if not command:
+        print(f"{_ERR}microvault run: no command given.", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.path.exists(VAULT_FILE):
+        print(f"{_ERR}MicroVault: no vault found. Run `microvault` to create one.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    password = getpass.getpass("MicroVault password: ")
+    data, salt, key = load_vault(password)
+    if data is None:
+        print(f"{_ERR}Wrong password or corrupted vault.", file=sys.stderr)
+        sys.exit(1)
+
+    if service not in data:
+        available = ", ".join(data) or "(empty)"
+        print(f"{_ERR}Service '{service}' not in vault. Available: {available}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    aliases = load_aliases()
+    var_name = aliases.get(service, env_var_name(service))
+
+    # Inject into this process's environment — execvp inherits it.
+    os.environ[var_name] = data[service]
+
+    # execvp replaces the current process entirely (Unix).
+    # The key lives in the environment for exactly as long as the child runs.
+    os.execvp(command[0], command)
+
+
+# ── interactive CLI ──────────────────────────────────────────────────────
 
 MENU_COMMANDS = [
     "add", "get", "list", "update", "delete",
@@ -335,6 +182,8 @@ USAGE
   microvault                   Launch the interactive vault
   microvault env [service]     Print `export SERVICE_API_KEY=...` lines for
                                 shell eval (all keys, or just one service)
+  microvault run svc -- cmd    Run a command with a service's key injected
+                                into its environment (never persisted)
   microvault --help            Show this help
 
 INTERACTIVE COMMANDS
@@ -384,8 +233,9 @@ INTERACTIVE COMMANDS
   exit                   Quit.
 
 SHELL EXAMPLE
-  eval "$(microvault env)"        # export every stored key into this shell
-  eval "$(microvault env openai)" # export just one
+  eval "$(microvault env)"          # export every stored key into this shell
+  eval "$(microvault env openai)"   # export just one
+  microvault run github -- npx -y @modelcontextprotocol/server-github
 """
 
 
@@ -624,13 +474,33 @@ def cli():
 
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
+    if len(sys.argv) <= 1:
+        cli()
+        return
+
+    first = sys.argv[1]
+
+    if first in ("--help", "-h"):
         print(HELP_TEXT)
-    elif len(sys.argv) > 1 and sys.argv[1] == "env":
+
+    elif first == "env":
         cmd_env(sys.argv[2] if len(sys.argv) > 2 else None)
+
+    elif first == "run":
+        # microvault run <service> -- <command> [args...]
+        args = sys.argv[2:]
+        if "--" not in args:
+            print(f"{_ERR}Usage: microvault run <service> -- <command> [args...]",
+                  file=sys.stderr)
+            sys.exit(1)
+        sep = args.index("--")
+        if sep == 0:
+            print(f"{_ERR}Usage: microvault run <service> -- <command> [args...]",
+                  file=sys.stderr)
+            sys.exit(1)
+        service = args[0]
+        command = args[sep + 1:]
+        cmd_run(service, command)
+
     else:
         cli()
-
-
-if __name__ == "__main__":
-    main()
