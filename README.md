@@ -111,6 +111,34 @@ wpscan --url https://your-authorized-target.com
 
 No `--api-token` flag needed — WPScan finds `WPSCAN_API_TOKEN` in the environment on its own. Same pattern works for any tool with any env var convention; the alias is what bridges MicroVault's naming to whatever that specific tool actually expects.
 
+### The shortcut: `microvault run`
+
+If you don't want the two-step `eval` + run dance, there's a one-liner that does both — unlocks the vault, injects the key, and replaces itself with the real command:
+
+```bash
+microvault run github -- npx -y @modelcontextprotocol/server-github
+```
+
+The `--` separates the service name from the command. Everything after it runs as a child process with the key in its environment. The key is never written to disk, never shown on screen, and lives only as long as the process does.
+
+This is especially useful for MCP servers and other tools that get spawned as subprocesses — they don't inherit your shell's exports, but they *do* inherit their parent's environment, and `run` *is* the parent.
+
+## 🐍 Python API
+
+MicroVault isn't just a CLI — it's a Python package you can import. If you're building a tool that needs API keys and don't want to deal with `.env` files or config parsing, just ask MicroVault directly:
+
+```python
+from microvault import vault
+
+key = vault.get("openai")          # prompts for password once, then caches
+env  = vault.env_name("github")    # "GH_TOKEN" (respects your aliases)
+all  = vault.list()                 # {"openai": "sk-...a3f", "github": "ghp_..."}
+```
+
+No server, no network, no daemon — it reads the same encrypted vault file the CLI uses. The password prompt fires once per process; subsequent calls reuse the in-memory session.
+
+This is how other Python tools in the Micro series (and yours) can pull keys from MicroVault without shelling out to `microvault env` and parsing stdout. One import, one call, done.
+
 ## 📦 Storage
 
 Everything lives at `~/.microvault/` by default. Want it somewhere else? Set `MICROVAULT_HOME` and it follows you there.
