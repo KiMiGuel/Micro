@@ -150,7 +150,7 @@ def env_var_name(service: str) -> str:
 # regardless of whether a service is in this table, so this list being
 # incomplete never blocks anyone.
 KNOWN_ALIASES = {
-    "github": "GH_TOKEN",
+    "github": "GITHUB_PERSONAL_ACCESS_TOKEN",
     "git": "GH_TOKEN",
     "shodan": "SHODAN_API_KEY",
     "virustotal": "VTCLI_APIKEY",
