@@ -151,18 +151,30 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## ¿Usas MeXiCOSINT? 🇲🇽
 
-Si usas [MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT) para investigación OSINT de números telefónicos mexicanos, puedes guardar sus API keys directamente en MicroVault en lugar de en el archivo JSON sin cifrar.
+Si usas [MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT) para investigación OSINT de números telefónicos mexicanos, puedes guardar sus API keys directamente en MicroVault en lugar de en el archivo JSON sin cifrar. MeXiCOSINT necesita las cinco para funcionar al 100%.
 
 ### Configuración
 
 ```bash
 microvault add geoapify
-microvault add opencage
-microvault add ipqualityscore
-microvault add numverify
-microvault add abstract_phone_intelligence
+microvault add opencage_api
+microvault add ipgs
+microvault add numverify_api
+microvault add abstract_api
 ```
 
-MeXiCOSINT detecta MicroVault automáticamente al ejecutar y usa las keys del vault cifrado. No necesitas editar `~/.mx_osint_config.json`.
+(Esos son los nombres exactos que MeXiCOSINT busca en la bóveda — no `opencage`, `ipqualityscore`, etc.)
+
+### Perfil (recomendado)
+
+Agrupa esas cinco keys en un perfil para que MeXiCOSINT solo vea sus propias keys — nunca el resto de tu bóveda, aunque tengas otros servicios guardados ahí:
+
+```bash
+microvault profile mexicosint geoapify opencage_api ipgs numverify_api abstract_api
+```
+
+MeXiCOSINT detecta MicroVault automáticamente al ejecutar — no hace falta ninguna flag — y usa el perfil `mexicosint` en cuanto existe, pidiendo tu contraseña maestra una sola vez para las cinco keys. Sin perfil, sigue funcionando igual, solo que la comprobación de conexión expone toda la bóveda en vez de solo esas cinco.
+
+No necesitas editar `~/.mx_osint_config.json`.
 
 Para más detalles, consulta el [README de MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT).

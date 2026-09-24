@@ -21,6 +21,7 @@ from .core import (
     VAULT_FILE,
     load_vault,
     load_aliases,
+    load_profiles,
     mask_key,
     env_var_name as _default_env_name,
 )
@@ -85,6 +86,26 @@ class _Session:
         self._ensure_unlocked()
         return self._aliases.get(service, _default_env_name(service))
 
+    def profile_services(self, name: str) -> list:
+        """Return the service names stored in profile *name*."""
+        profiles = load_profiles()
+        if name not in profiles:
+            raise KeyError(
+                f"Profile '{name}' not found. Create it with: "
+                f"microvault profile {name} <service1> [service2 ...]"
+            )
+        return profiles[name]
+
+    def env_profile(self, name: str) -> dict:
+        """Return {service: key} for every service in profile *name* that's
+        actually present in the vault — everything else stays out."""
+        self._ensure_unlocked()
+        return {
+            svc: self._data[svc]
+            for svc in self.profile_services(name)
+            if svc in self._data
+        }
+
     def export_line(self, service: str) -> str:
         """Return a single `export NAME=value` line for shell eval."""
         key = self.get(service)
@@ -140,6 +161,16 @@ def services() -> list[str]:
 def env_name(service: str) -> str:
     """Get the env-var name for a service (respects aliases)."""
     return _session.env_name(service)
+
+
+def profile_services(name: str) -> list:
+    """List the service names stored in a named profile."""
+    return _session.profile_services(name)
+
+
+def env_profile(name: str) -> dict:
+    """Get {service: key} for a named profile's services only."""
+    return _session.env_profile(name)
 
 
 def export_line(service: str) -> str:

@@ -25,6 +25,7 @@ MICROVAULT_HOME = os.environ.get(
 )
 VAULT_FILE = os.path.join(MICROVAULT_HOME, "vault.enc")
 ALIASES_FILE = os.path.join(MICROVAULT_HOME, "aliases.json")
+PROFILES_FILE = os.path.join(MICROVAULT_HOME, "profiles.json")
 
 MICROSTACKS_HOME = os.environ.get(
     "MICROSTACKS_HOME", os.path.expanduser("~/.microstacks")
@@ -196,6 +197,31 @@ def save_aliases(aliases: dict):
     with open(tmp_path, "w") as f:
         json.dump(aliases, f, indent=2, sort_keys=True)
     os.replace(tmp_path, ALIASES_FILE)
+
+
+# ── profiles I/O (plain JSON, not encrypted — just service-name lists) ───
+# A profile scopes `microvault env --profile <name>` (and the matching
+# Python API call) to a named subset of services, so a specific tool only
+# ever sees the keys it actually uses instead of every key in the vault.
+# Profile membership is not secret — it's the same kind of metadata as
+# aliases.json — so, like aliases, it never requires the master password.
+
+def load_profiles() -> dict:
+    if not os.path.exists(PROFILES_FILE):
+        return {}
+    try:
+        with open(PROFILES_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_profiles(profiles: dict):
+    os.makedirs(os.path.dirname(PROFILES_FILE), exist_ok=True)
+    tmp_path = PROFILES_FILE + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(profiles, f, indent=2, sort_keys=True)
+    os.replace(tmp_path, PROFILES_FILE)
 
 
 # ── key file import parser ───────────────────────────────────────────────

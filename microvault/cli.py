@@ -34,6 +34,8 @@ from .core import (
     suggest_alias,
     load_aliases,
     save_aliases,
+    load_profiles,
+    save_profiles,
     parse_key_file,
     generate_microstack_token,
     TOKENS_PER_MICROSTACK,
@@ -104,11 +106,27 @@ def print_banner():
 # ── sub-commands ─────────────────────────────────────────────────────────
 
 
-def cmd_env(target_service: str = None):
+def cmd_env(target_service: str = None, profile: str = None, as_json: bool = False):
     """Prints `export NAME=value` lines to stdout for shell eval. All other
-    output (prompts, errors) goes to stderr so stdout stays eval-safe."""
+    output (prompts, errors) goes to stderr so stdout stays eval-safe.
+
+    With *profile*, only the services listed in that named profile are
+    exported — everything else in the vault stays out of the output
+    entirely, even though unlocking still decrypts the whole vault file
+    in this process (Fernet encrypts it as one blob; a profile scopes what
+    crosses back out to the caller, not what gets decrypted in memory).
+
+    With *as_json*, prints `{"service": "key", ...}` instead of export
+    lines — one password prompt gets every service's raw value back by its
+    vault-native name, keyed the same way regardless of any alias, so a
+    calling tool can fetch a whole profile in a single subprocess call
+    instead of re-prompting once per service."""
     if not os.path.exists(VAULT_FILE):
         print("MicroVault: no vault found.", file=sys.stderr)
+        sys.exit(1)
+
+    if target_service and profile:
+        print("MicroVault: pass a service name or --profile, not both.", file=sys.stderr)
         sys.exit(1)
 
     password = getpass.getpass("Enter master password: ")
@@ -117,17 +135,72 @@ def cmd_env(target_service: str = None):
         print("MicroVault: wrong password or corrupted vault.", file=sys.stderr)
         sys.exit(1)
 
-    items = data.items()
-    if target_service:
+    if profile:
+        profiles = load_profiles()
+        if profile not in profiles:
+            print(f"MicroVault: profile '{profile}' not found. Create it with: "
+                  f"microvault profile {profile} <service1> [service2 ...]", file=sys.stderr)
+            sys.exit(1)
+        items = [(s, data[s]) for s in profiles[profile] if s in data]
+    elif target_service:
         if target_service not in data:
             print(f"MicroVault: service '{target_service}' not found.", file=sys.stderr)
             sys.exit(1)
         items = [(target_service, data[target_service])]
+    else:
+        items = data.items()
+
+    if as_json:
+        print(json.dumps(dict(items)))
+        return
 
     aliases = load_aliases()
     for service, api_key in items:
         var_name = aliases.get(service, env_var_name(service))
         print(f"export {var_name}={shlex.quote(api_key)}")
+
+
+def cmd_profile(args: list[str]):
+    """Manage named, non-secret groups of service names that scope
+    `microvault env --profile <name>` to just that subset of the vault."""
+    profiles = load_profiles()
+
+    if not args:
+        if not profiles:
+            print("No profiles defined yet. Create one with: "
+                  "microvault profile <name> <service1> [service2 ...]")
+            return
+        print("Profiles:")
+        for name, services in sorted(profiles.items()):
+            print(f"  {name}: {', '.join(services) or '(empty)'}")
+        return
+
+    if args[0] == "delete":
+        if len(args) < 2:
+            print(f"{_ERR}Usage: microvault profile delete <name>", file=sys.stderr)
+            sys.exit(1)
+        name = args[1]
+        if name not in profiles:
+            print(f"MicroVault: profile '{name}' not found.", file=sys.stderr)
+            sys.exit(1)
+        del profiles[name]
+        save_profiles(profiles)
+        print(f"{_OK}Deleted profile '{name}'.")
+        return
+
+    name = args[0]
+    if len(args) == 1:
+        if name not in profiles:
+            print(f"MicroVault: profile '{name}' not found.", file=sys.stderr)
+            sys.exit(1)
+        print(f"{name}: {', '.join(profiles[name]) or '(empty)'}")
+        return
+
+    services = args[1:]
+    profiles[name] = services
+    save_profiles(profiles)
+    print(f"{_OK}Saved profile '{name}' ({len(services)} service"
+          f"{'s' if len(services) != 1 else ''}).")
 
 
 def cmd_run(service: str, command: list[str]):
@@ -182,6 +255,9 @@ USAGE
   microvault                   Launch the interactive vault
   microvault env [service]     Print `export SERVICE_API_KEY=...` lines for
                                 shell eval (all keys, or just one service)
+  microvault env --profile P   Print `export` lines for just profile P's
+                                services — nothing else in the vault
+  microvault profile           List profiles, or manage them (see below)
   microvault run svc -- cmd    Run a command with a service's key injected
                                 into its environment (never persisted)
   microvault --help            Show this help
@@ -232,9 +308,20 @@ INTERACTIVE COMMANDS
                          e.g. `revoke mstk_openai_4f9a1c2b8e7d`
   exit                   Quit.
 
+PROFILES
+  A profile is a named, non-secret list of service names that scopes
+  `microvault env` to just that subset — useful when several tools share
+  one vault and each should only ever see its own keys.
+
+  microvault profile                          List all profiles.
+  microvault profile mexicosint svc1 svc2     Create/overwrite a profile.
+  microvault profile mexicosint               Show one profile's services.
+  microvault profile delete mexicosint        Remove a profile.
+
 SHELL EXAMPLE
-  eval "$(microvault env)"          # export every stored key into this shell
-  eval "$(microvault env openai)"   # export just one
+  eval "$(microvault env)"                    # export every stored key
+  eval "$(microvault env openai)"             # export just one
+  eval "$(microvault env --profile mexicosint)"  # export just a profile
   microvault run github -- npx -y @modelcontextprotocol/server-github
 """
 
@@ -484,7 +571,22 @@ def main():
         print(HELP_TEXT)
 
     elif first == "env":
-        cmd_env(sys.argv[2] if len(sys.argv) > 2 else None)
+        argv = sys.argv[2:]
+        profile = None
+        if "--profile" in argv:
+            idx = argv.index("--profile")
+            if idx + 1 >= len(argv):
+                print(f"{_ERR}Usage: microvault env --profile <name> [service]", file=sys.stderr)
+                sys.exit(1)
+            profile = argv[idx + 1]
+            del argv[idx:idx + 2]
+        as_json = "--json" in argv
+        if as_json:
+            argv.remove("--json")
+        cmd_env(argv[0] if argv else None, profile=profile, as_json=as_json)
+
+    elif first == "profile":
+        cmd_profile(sys.argv[2:])
 
     elif first == "run":
         # microvault run <service> -- <command> [args...]
