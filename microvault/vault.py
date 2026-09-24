@@ -77,7 +77,7 @@ class _Session:
     def services(self) -> list[str]:
         """Return the list of stored service names."""
         self._ensure_unlocked()
-        return list(self._data.keys())
+        return [name for name in self._data.keys()]
 
     def env_name(self, service: str) -> str:
         """Return the env-var name that `microvault env` would export for
