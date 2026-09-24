@@ -146,3 +146,23 @@ Everything lives at `~/.microvault/` by default. Want it somewhere else? Set `MI
 ## 📄 License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
+
+---
+
+## ¿Usas MeXiCOSINT? 🇲🇽
+
+Si usas [MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT) para investigación OSINT de números telefónicos mexicanos, puedes guardar sus API keys directamente en MicroVault en lugar de en el archivo JSON sin cifrar.
+
+### Configuración
+
+```bash
+microvault add geoapify
+microvault add opencage
+microvault add ipqualityscore
+microvault add numverify
+microvault add abstract_phone_intelligence
+```
+
+MeXiCOSINT detecta MicroVault automáticamente al ejecutar y usa las keys del vault cifrado. No necesitas editar `~/.mx_osint_config.json`.
+
+Para más detalles, consulta el [README de MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT).
