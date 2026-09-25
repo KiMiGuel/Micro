@@ -195,3 +195,5 @@ microvault profile mexicosint geoapify opencage_api ipgs numverify_api abstract_
 MeXiCOSINT detecta MicroVault automáticamente al ejecutarse — no necesita una flag — y requiere el perfil compatible `mexicosint`, pidiendo tu contraseña maestra una sola vez para las cinco keys. MicroVault se conecta a MeXiCOSINT mediante ese perfil aislado y consulta el perfil una sola vez. La configuración de credenciales se hace únicamente en MicroVault.
 
 Para más detalles, consulta el [README de MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT).
+
+Las palabras `svc1` y `svc2` que aparecen en la ayuda son marcadores de ejemplo, no nombres obligatorios. `Services` significa los nombres exactos de las claves almacenadas en MicroVault. Para verlas sin exponerlas, abre MicroVault y elige **List stored keys**; para actualizar un perfil existente, usa **Profiles → Update an existing profile** o vuelve a ejecutar el comando `microvault profile mexicosint ...` con la lista completa de servicios.

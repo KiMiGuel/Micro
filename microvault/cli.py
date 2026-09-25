@@ -236,7 +236,7 @@ def cmd_run(service: str, command: list[str]):
 MENU_CHOICES = [
     Choice("Add a key", "add"),
     Choice("Get a key", "get"),
-    Choice("List stored keys", "list"),
+    Choice("List stored keys (masked)", "list"),
     Choice("Update a key", "update"),
     Choice("Delete a key", "delete"),
     Choice("Import keys from a file", "import"),
@@ -271,7 +271,7 @@ INTERACTIVE MENU
   add                 Store a new key. The key is always entered in a
                       separate hidden prompt, never shown on screen.
   get                 Print a stored key.
-  list                List all services with keys masked.
+  list                List all service names with keys masked.
   update              Replace a stored key using a hidden prompt.
   delete              Remove a stored key.
   profiles            Open the profile manager: list, create/update, delete.
@@ -299,14 +299,25 @@ SHELL EXAMPLE
 """
 
 
-def _profile_menu():
+def _print_stored_service_names(vault):
+    """Show selectable service names without exposing their values."""
+    if not vault:
+        print(f"{_WARN}No stored service names found.{Style.RESET_ALL}")
+        return
+    print(f"{_INFO}Stored service names available for profiles:{Style.RESET_ALL}")
+    for service in sorted(vault):
+        print(f"  - {service}")
+
+
+def _profile_menu(vault):
     """Open the interactive profile manager."""
     while True:
         action = questionary.select(
             "Profiles:",
             choices=[
                 Choice("List profiles", "view"),
-                Choice("Create or update a profile", "create"),
+                Choice("Create a new profile", "create"),
+                Choice("Update an existing profile", "update"),
                 Choice("Delete a profile", "delete"),
                 Choice("Back", "back"),
             ],
@@ -330,18 +341,52 @@ def _profile_menu():
             continue
 
         if action == "create":
-            name = input("Profile name: ").strip()
+            name = input("New profile name: ").strip()
             if not name:
                 print(f"{_WARN}No profile name entered.{Style.RESET_ALL}")
                 continue
+            if name in profiles:
+                print(
+                    f"{_WARN}Profile '{name}' already exists. Use "
+                    "Update an existing profile instead."
+                )
+                continue
+            _print_stored_service_names(vault)
             raw_services = input(
-                "Services (comma or space separated): "
+                "Vault service names to include (comma or space separated): "
             ).strip()
             services = [service for service in raw_services.replace(",", " ").split() if service]
             if not services:
                 print(f"{_WARN}No services entered.{Style.RESET_ALL}")
                 continue
             cmd_profile([name, *services])
+            continue
+
+        if action == "update":
+            if not profiles:
+                print(f"{_INFO}No profiles defined yet.{Style.RESET_ALL}")
+                continue
+            selected = questionary.select(
+                "Choose a profile to update:",
+                choices=[Choice(name, name) for name in sorted(profiles)],
+            ).ask()
+            if selected is None:
+                continue
+            current = ", ".join(profiles[selected]) or "(empty)"
+            print(f"{_INFO}Current services:{Style.RESET_ALL} {current}")
+            _print_stored_service_names(vault)
+            raw_services = input(
+                "Replacement service names (comma or space separated; "
+                "blank keeps current): "
+            ).strip()
+            if not raw_services:
+                print(f"{_INFO}No changes made.{Style.RESET_ALL}")
+                continue
+            services = [service for service in raw_services.replace(",", " ").split() if service]
+            if not services:
+                print(f"{_WARN}No services entered.{Style.RESET_ALL}")
+                continue
+            cmd_profile([selected, *services])
             continue
 
         if not profiles:
@@ -521,7 +566,7 @@ def cli():
                     print(f"{_OK}{service} will now export as {aliases[service]}.")
 
         elif cmd == 'profiles':
-            _profile_menu()
+            _profile_menu(vault)
 
         else:
             print(f"{_ERR}Unknown command.")
