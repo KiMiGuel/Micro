@@ -367,12 +367,17 @@ def _profile_menu(vault):
                 )
                 continue
             _print_stored_service_names(vault)
-            raw_services = input(
-                "Vault service names to include (comma or space separated): "
-            ).strip()
-            services = [service for service in raw_services.replace(",", " ").split() if service]
+            services = questionary.checkbox(
+                "Select services to include:",
+                choices=[
+                    Choice(service, service, checked=False)
+                    for service in sorted(vault)
+                ],
+            ).ask()
+            if services is None:
+                continue
             if not services:
-                print(f"{_WARN}No services entered.{Style.RESET_ALL}")
+                print(f"{_WARN}No services selected.{Style.RESET_ALL}")
                 continue
             cmd_profile([name, *services])
             continue
@@ -387,21 +392,24 @@ def _profile_menu(vault):
             ).ask()
             if selected is None:
                 continue
-            current = ", ".join(profiles[selected]) or "(empty)"
-            print(f"{_INFO}Current services:{Style.RESET_ALL} {current}")
+            current = profiles[selected]
+            print(f"{_INFO}Current services:{Style.RESET_ALL} {', '.join(current) or '(empty)'}")
             _print_stored_service_names(vault)
-            raw_services = input(
-                "Replacement service names (comma or space separated; "
-                "blank keeps current): "
-            ).strip()
-            if not raw_services:
-                print(f"{_INFO}No changes made.{Style.RESET_ALL}")
-                continue
-            services = [service for service in raw_services.replace(",", " ").split() if service]
-            if not services:
-                print(f"{_WARN}No services entered.{Style.RESET_ALL}")
+            services = questionary.checkbox(
+                "Select services for this profile:",
+                choices=[
+                    Choice(
+                        service,
+                        service,
+                        checked=service in current,
+                    )
+                    for service in sorted(vault)
+                ],
+            ).ask()
+            if services is None:
                 continue
             cmd_profile([selected, *services])
+            print(f"{_INFO}Saved services:{Style.RESET_ALL} {', '.join(services) or '(empty)'}")
             continue
 
         if not profiles:
