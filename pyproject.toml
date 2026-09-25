@@ -29,3 +29,7 @@ microvault = "microvault:main"
 
 [tool.setuptools.packages.find]
 include = ["microvault*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

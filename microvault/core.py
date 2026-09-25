@@ -11,8 +11,6 @@ import json
 import os
 import re
 import shutil
-import secrets
-from datetime import datetime, timezone
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -27,16 +25,10 @@ VAULT_FILE = os.path.join(MICROVAULT_HOME, "vault.enc")
 ALIASES_FILE = os.path.join(MICROVAULT_HOME, "aliases.json")
 PROFILES_FILE = os.path.join(MICROVAULT_HOME, "profiles.json")
 
-MICROSTACKS_HOME = os.environ.get(
-    "MICROSTACKS_HOME", os.path.expanduser("~/.microstacks")
-)
-MICROSTACKS_FILE = os.path.join(MICROSTACKS_HOME, "microstacks.enc")
-
 # ── crypto constants ─────────────────────────────────────────────────────
 
 SALT_SIZE = 16
 PBKDF2_ITERATIONS = 600_000
-TOKENS_PER_MICROSTACK = 1000  # display unit: 1 MicroStack = 1000 LLM tokens
 
 
 # ── crypto helpers ───────────────────────────────────────────────────────
@@ -68,11 +60,11 @@ def load_store(path: str, password: str):
     if len(raw) <= SALT_SIZE:
         return None, None, None
 
-    salt, token = raw[:SALT_SIZE], raw[SALT_SIZE:]
+    salt, ciphertext = raw[:SALT_SIZE], raw[SALT_SIZE:]
     key = derive_key(password, salt)
 
     try:
-        data = json.loads(Fernet(key).decrypt(token).decode("utf-8"))
+        data = json.loads(Fernet(key).decrypt(ciphertext).decode("utf-8"))
         return data, salt, key
     except (InvalidToken, ValueError):
         return None, None, None
@@ -81,12 +73,12 @@ def load_store(path: str, password: str):
 def save_store(path: str, data: dict, salt: bytes, key: bytes):
     """Encrypt and atomically write a store to disk, reusing the session
     salt/key."""
-    token = Fernet(key).encrypt(json.dumps(data).encode("utf-8"))
+    ciphertext = Fernet(key).encrypt(json.dumps(data).encode("utf-8"))
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp_path = path + ".tmp"
     with open(tmp_path, "wb") as f:
-        f.write(salt + token)
+        f.write(salt + ciphertext)
     os.chmod(tmp_path, 0o600)
     os.replace(tmp_path, path)
 
@@ -112,14 +104,6 @@ def save_vault(data: dict, salt: bytes, key: bytes):
     save_store(VAULT_FILE, data, salt, key)
     snapshot_backup(VAULT_FILE)
 
-
-def load_microstacks(password: str):
-    return load_store(MICROSTACKS_FILE, password)
-
-
-def save_microstacks(data: dict, salt: bytes, key: bytes):
-    save_store(MICROSTACKS_FILE, data, salt, key)
-    snapshot_backup(MICROSTACKS_FILE)
 
 
 # ── display helpers ──────────────────────────────────────────────────────
@@ -258,12 +242,3 @@ def parse_key_file(path: str):
             name = name.lower()
             entries[name] = value
     return entries, failed_lines
-
-
-# ── microstacks helpers ──────────────────────────────────────────────────
-
-def generate_microstack_token(service: str) -> str:
-    """Mints an opaque bearer token for a service, e.g.
-    'mstk_openai_4f9a1c2b8e7d'."""
-    sanitized = re.sub(r"[^a-z0-9]", "", service.strip().lower())
-    return f"mstk_{sanitized}_{secrets.token_hex(6)}"

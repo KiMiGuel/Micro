@@ -40,16 +40,17 @@ No account to create. No server to trust. No cloud sync to worry about getting b
   ```
 
   One line, and every stored key becomes a real environment variable for that session — gone the moment you close the terminal.
-- **Other tools can call their APIs straight from what's in MicroVault** — no copy-pasting a key into a separate config file somewhere else. The catch: a lot of real tools expect a specific env var name that isn't the obvious one (WPScan wants `WPSCAN_API_TOKEN`, VirusTotal's CLI wants the genuinely odd `VTCLI_APIKEY`, `gh` wants `GH_TOKEN`). The `alias` command fixes that — set the exact name a tool expects once, and `microvault env` exports it correctly from then on:
+- **Other tools can call their APIs straight from what's in MicroVault** — no copy-pasting a key into a separate config file somewhere else. A lot of real tools expect a specific environment-variable name that isn't the obvious one (WPScan wants `WPSCAN_API_TOKEN`, VirusTotal's CLI wants the genuinely odd `VTCLI_APIKEY`, `gh` wants `GH_TOKEN`). The interactive **Configure an environment alias** action sets the exact name a tool expects once, and `microvault env` exports it correctly from then on:
 
-  ```bash
-  > alias wpscan
+  ```text
+  Choose a command: Configure an environment alias
+  Service name to set an alias for: wpscan
   Export name for wpscan (suggested: WPSCAN_API_TOKEN — press Enter to accept):
   wpscan will now export as WPSCAN_API_TOKEN.
   ```
 
-  MicroVault recognizes a handful of common tools and suggests the right name — but `alias` always accepts anything you type, so this works for literally any tool, known or not.
-- **An arrow-key menu if you don't feel like typing.** Hit Enter at the prompt with nothing typed, and you get a navigable list. Prefer typing `add openai` directly? That still works exactly the same.
+  MicroVault recognizes a handful of common tools and suggests the right name, but the alias prompt always accepts anything you type, so this works for literally any tool, known or not.
+- **An arrow-key selection menu.** The interactive vault opens directly into the menu; choose an action with ↑/↓ and Enter. Service names, aliases, file paths, and profiles are requested by focused prompts after selecting an action.
 - **Colorful, readable output** — because staring at a wall of monochrome CLI text all day is nobody's idea of a good time.
 
 ## 🚀 Try it
@@ -59,30 +60,48 @@ pip install microvault
 microvault
 ```
 
-That's it. First run asks you to set a master password, and you're in.
+That's it. On first run, MicroVault asks whether to create a vault with your master password, then opens the arrow-key menu:
 
-```bash
-> add openai
+```text
+Choose a command: Add a key
+Service name (e.g., openai, aws): openai
 API Key (input hidden): ••••••••••••••••••••••
 Saved openai.
 ```
+
+Vault actions are selected from the interactive menu. The standalone CLI also supports these non-interactive commands:
+
+```bash
+microvault env                         # export every key for shell eval
+microvault env openai                  # export one key
+microvault env --profile mexicosint    # export one profile
+microvault env --profile mexicosint --json
+microvault profile                     # list profiles
+microvault profile <name> <service...> # create or replace a profile
+microvault profile delete <name>       # delete a profile
+microvault run <service> -- <command>  # run a command with one key injected
+```
+
+Use `microvault --help` for the complete command reference.
 
 ## 🔌 Using a stored key with any tool
 
 Same four steps, every time, no matter what the tool is:
 
-**1. Store it.**
+**1. Store it.** Run `microvault`, choose **Add a key**, and enter the service name followed by the hidden key prompt.
 
-```
-> add servicename
+```text
+Choose a command: Add a key
+Service name (e.g., openai, aws): servicename
 API Key (input hidden): [paste the key]
 Saved servicename.
 ```
 
-**2. If the tool expects a specific env var name, alias it.** Most tools that auto-read a key from the environment have their own convention — check that tool's docs for the exact name it looks for. If you don't know it, just skip this step; the default (`SERVICENAME_API_KEY`) works fine for anything that lets you pass the key as a flag instead.
+**2. If the tool expects a specific env var name, alias it.** Most tools that auto-read a key from the environment have their own convention — check that tool's docs for the exact name it looks for. If you don't know it, just skip this step; the default (`SERVICENAME_API_KEY`) works fine for anything that lets you pass the key as a flag instead. To set an alias, run `microvault` and choose **Configure an environment alias**.
 
-```
-> alias servicename
+```text
+Choose a command: Configure an environment alias
+Service name to set an alias for: servicename
 Export name for servicename (suggested: ..., or type your own):
 servicename will now export as WHATEVER_THE_TOOL_EXPECTS.
 ```
@@ -102,8 +121,8 @@ sometool --api-key "$WHATEVER_THE_TOOL_EXPECTS"
 Worked example, using [WPScan](https://github.com/wpscanteam/wpscan) — which auto-reads `WPSCAN_API_TOKEN`, not the default MicroVault would generate:
 
 ```bash
-# in MicroVault: add wpscan_api, then alias wpscan_api -> accept the
-# suggested WPSCAN_API_TOKEN, then exit
+# in the MicroVault menu, add wpscan_api, then configure an alias for it
+# and accept the suggested WPSCAN_API_TOKEN
 
 eval "$(microvault env wpscan_api)"
 wpscan --url https://your-authorized-target.com
@@ -137,11 +156,11 @@ all  = vault.list()                 # {"openai": "sk-...a3f", "github": "ghp_...
 
 No server, no network, no daemon — it reads the same encrypted vault file the CLI uses. The password prompt fires once per process; subsequent calls reuse the in-memory session.
 
-This is how other Python tools in the Micro series (and yours) can pull keys from MicroVault without shelling out to `microvault env` and parsing stdout. One import, one call, done.
+This is how other Python tools (and yours) can pull keys from MicroVault without shelling out to `microvault env` and parsing stdout. One import, one call, done.
 
 ## 📦 Storage
 
-Everything lives at `~/.microvault/` by default. Want it somewhere else? Set `MICROVAULT_HOME` and it follows you there.
+Everything lives at `~/.microvault/` by default: the encrypted `vault.enc`, non-secret alias/profile metadata, and a rolling encrypted backup under `backups/`. Want it somewhere else? Set `MICROVAULT_HOME` and it follows you there.
 
 ## 📄 License
 
@@ -151,19 +170,19 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## ¿Usas MeXiCOSINT? 🇲🇽
 
-Si usas [MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT) para investigación OSINT de números telefónicos mexicanos, puedes guardar sus API keys directamente en MicroVault en lugar de en el archivo JSON sin cifrar. MeXiCOSINT necesita las cinco para funcionar al 100%.
+Si usas [MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT) para investigación OSINT de números telefónicos mexicanos, guarda sus API keys directamente en MicroVault. MeXiCOSINT requiere el perfil `mexicosint` para el enriquecimiento normal.
 
 ### Configuración
 
-```bash
-microvault add geoapify
-microvault add opencage_api
-microvault add ipgs
-microvault add numverify_api
-microvault add abstract_api
-```
+Ejecuta `microvault` y elige **Add a key** cinco veces para guardar:
 
-(Esos son los nombres exactos que MeXiCOSINT busca en la bóveda — no `opencage`, `ipqualityscore`, etc.)
+- `geoapify`
+- `opencage_api`
+- `ipgs`
+- `numverify_api`
+- `abstract_api`
+
+Esos son los nombres exactos que MeXiCOSINT busca en la bóveda — no `opencage`, `ipqualityscore`, etc.
 
 ### Perfil (recomendado)
 
@@ -173,8 +192,6 @@ Agrupa esas cinco keys en un perfil para que MeXiCOSINT solo vea sus propias key
 microvault profile mexicosint geoapify opencage_api ipgs numverify_api abstract_api
 ```
 
-MeXiCOSINT detecta MicroVault automáticamente al ejecutar — no hace falta ninguna flag — y usa el perfil `mexicosint` en cuanto existe, pidiendo tu contraseña maestra una sola vez para las cinco keys. Sin perfil, sigue funcionando igual, solo que la comprobación de conexión expone toda la bóveda en vez de solo esas cinco.
-
-No necesitas editar `~/.mx_osint_config.json`.
+MeXiCOSINT detecta MicroVault automáticamente al ejecutarse — no necesita una flag — y requiere el perfil compatible `mexicosint`, pidiendo tu contraseña maestra una sola vez para las cinco keys. MicroVault se conecta a MeXiCOSINT mediante ese perfil aislado y consulta el perfil una sola vez. La configuración de credenciales se hace únicamente en MicroVault.
 
 Para más detalles, consulta el [README de MeXiCOSINT](https://github.com/KiMiGuel/MeXiCOSINT).

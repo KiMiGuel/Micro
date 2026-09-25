@@ -198,7 +198,7 @@ microvault</pre>
       <div class="card">
         <div class="ico">🧭</div>
         <h3>Arrow-key menu</h3>
-        <p>Hit Enter with nothing typed for a navigable list, or type <code>add openai</code> directly — both work exactly the same.</p>
+        <p>The interactive vault opens directly into a navigable action menu; prompts collect service names, aliases, paths, and profiles after each selection.</p>
       </div>
     </div>
   </div>
@@ -225,7 +225,8 @@ microvault</pre>
 
 <span class="hl">Master password:</span> ********
 
-<span class="dim">$</span> add openai
+<span class="dim">Choose a command:</span> Add a key
+<span class="hl">Service name:</span> openai
 <span class="hl">API Key (input hidden):</span> ••••••••••••••••••••••
 Saved openai.
 
@@ -252,7 +253,7 @@ Saved openai.
       <div class="step">
         <div class="n">02</div>
         <h3>Store a key</h3>
-        <p><code>add openai</code><br>Paste the key at the hidden prompt. It never touches your screen or shell history.</p>
+        <p>Choose <b>Add a key</b> in the interactive menu.<br>Paste the key at the hidden prompt. It never touches your screen or shell history.</p>
       </div>
       <div class="step">
         <div class="n">03</div>
@@ -268,13 +269,15 @@ Saved openai.
     <p class="kicker">Using a stored key with any tool</p>
     <h2>Same four steps, every time, no matter what the tool is.</h2>
     <p class="lead">A lot of real tools expect a specific env var name that isn't the obvious one. <code>alias</code> bridges MicroVault's naming to whatever that tool actually expects.</p>
-    <div class="cmd"><span class="c"># 1. store it</span>
-&gt; add wpscan_api
+    <div class="cmd"><span class="c"># 1. store it from the MicroVault menu</span>
+Choose a command: Add a key
+Service name: wpscan_api
 API Key (input hidden): [paste the key]
 Saved wpscan_api.
 
 <span class="c"># 2. alias it to what the tool expects</span>
-&gt; alias wpscan_api
+Choose a command: Configure an environment alias
+Service name to set an alias for: wpscan_api
 Export name (suggested: WPSCAN_API_TOKEN): <span class="c">[Enter]</span>
 wpscan_api will now export as WPSCAN_API_TOKEN.
 
@@ -292,21 +295,21 @@ wpscan --url https://your-authorized-target.com</div>
   <div class="wrap">
     <p class="kicker">Adaptive integration</p>
     <h2>Built to pair with MeXiCOSINT</h2>
-    <p class="lead">MicroVault isn't just a standalone CLI — other tools in the Micro series detect it automatically and pull keys straight from the encrypted vault instead of an unencrypted config file.</p>
+    <p class="lead">MicroVault is a standalone encrypted CLI with a supported MeXiCOSINT integration: MeXiCOSINT can detect it automatically and pull its five service keys without an unencrypted config file.</p>
     <div class="mexi-box">
       <div class="txt">
         <span class="pill">AUTO-DETECTED</span>
         <h3>MeXiCOSINT reads your vault automatically</h3>
-        <p>If you use <a href="https://github.com/KiMiGuel/MeXiCOSINT">MeXiCOSINT</a> for Mexican phone number OSINT, store its API keys in MicroVault instead of the unencrypted <code>~/.mx_osint_config.json</code> — these are the exact names it looks for:</p>
-        <div class="cmd" style="margin-top:16px">microvault add geoapify
-microvault add opencage_api
-microvault add ipgs
-microvault add numverify_api
-microvault add abstract_api</div>
-        <p>Then group them into a profile, so MeXiCOSINT only ever sees its own five keys — never the rest of your vault:</p>
+        <p>If you use <a href="https://github.com/KiMiGuel/MeXiCOSINT">MeXiCOSINT</a> for Mexican phone number OSINT, run <code>microvault</code>, choose <b>Add a key</b> five times, and store these exact service names:</p>
+        <div class="cmd" style="margin-top:16px">geoapify
+opencage_api
+ipgs
+numverify_api
+abstract_api</div>
+        <p>Then create the supported <code>mexicosint</code> profile, so MeXiCOSINT only ever sees its own five keys — never the rest of your vault:</p>
         <div class="cmd">microvault profile mexicosint \
   geoapify opencage_api ipgs numverify_api abstract_api</div>
-        <p>MeXiCOSINT detects MicroVault and the profile automatically on launch — no flag, no config file to edit, nothing in plaintext.</p>
+        <p>MeXiCOSINT detects MicroVault and the supported <code>mexicosint</code> profile automatically on launch — no flag, no config file to edit, nothing in plaintext.</p>
       </div>
     </div>
   </div>
@@ -320,7 +323,7 @@ microvault add abstract_api</div>
       <div class="card">
         <div class="ico">📁</div>
         <h3>Default location</h3>
-        <p><code>~/.microvault/</code> — one encrypted file, plus auto-snapshot backups.</p>
+        <p><code>~/.microvault/</code> — one encrypted vault, non-secret metadata, and a rolling encrypted backup.</p>
       </div>
       <div class="card">
         <div class="ico">🧭</div>

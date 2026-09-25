@@ -13,32 +13,24 @@ import sys
 import shlex
 import shutil
 import getpass
-from datetime import datetime, timezone
 from colorama import init as _colorama_init, Fore, Style
 import questionary
+from questionary import Choice
 
 from .core import (
     MICROVAULT_HOME,
     VAULT_FILE,
-    ALIASES_FILE,
-    MICROSTACKS_HOME,
-    MICROSTACKS_FILE,
     load_vault,
     save_vault,
     snapshot_backup,
-    load_microstacks,
-    save_microstacks,
     mask_key,
     env_var_name,
-    KNOWN_ALIASES,
     suggest_alias,
     load_aliases,
     save_aliases,
     load_profiles,
     save_profiles,
     parse_key_file,
-    generate_microstack_token,
-    TOKENS_PER_MICROSTACK,
 )
 
 _colorama_init(autoreset=True)
@@ -241,11 +233,19 @@ def cmd_run(service: str, command: list[str]):
 
 # ── interactive CLI ──────────────────────────────────────────────────────
 
-MENU_COMMANDS = [
-    "add", "get", "list", "update", "delete",
-    "import", "backup", "restore", "alias",
-    "mint", "tokens", "revoke",
-    "help", "exit",
+MENU_CHOICES = [
+    Choice("Add a key", "add"),
+    Choice("Get a key", "get"),
+    Choice("List stored keys", "list"),
+    Choice("Update a key", "update"),
+    Choice("Delete a key", "delete"),
+    Choice("Import keys from a file", "import"),
+    Choice("Create a backup", "backup"),
+    Choice("Restore a backup", "restore"),
+    Choice("Configure an environment alias", "alias"),
+    Choice("Profiles", "profiles"),
+    Choice("Help", "help"),
+    Choice("Exit", "exit"),
 ]
 
 HELP_TEXT = """\
@@ -262,51 +262,24 @@ USAGE
                                 into its environment (never persisted)
   microvault --help            Show this help
 
-INTERACTIVE COMMANDS
-  Each command works two ways: type it alone and you'll be prompted for
-  its argument, or type the argument inline on the same line.
+INTERACTIVE MENU
+  The interactive vault opens directly into an arrow-key selection menu.
+  Use ↑/↓ to move, Enter to select, and Esc or Ctrl+C to leave a submenu.
+  Arguments such as service names, file paths, aliases, and profiles are
+  requested by focused prompts after you choose an action.
 
-  add [service]         Store a new key. Service name may be inline
-                         (e.g. `add openai`); the key itself is always
-                         entered via a separate hidden prompt, never
-                         inline, so it's never visible on screen or
-                         typed on the same line as a command.
-  get [service]          Print a stored key.
-                         e.g. `get openai`
-  list                   List all services with keys masked.
-  update [service]       Replace a stored key (hidden prompt, as with add).
-                         e.g. `update openai`
-  delete [service]       Remove a stored key.
-                         e.g. `delete openai`
-  import [path]          Bulk-import from a text file of `name=key` /
-                         `name: key` / `name key` / `export name=key`
-                         lines (one per line). Shows parsed service names
-                         only, never values, before writing.
-                         e.g. `import ~/Desktop/keys.txt`
-  backup                  Force an extra timestamped snapshot right now
-                         (e.g. before something risky) — every add/
-                         update/delete/import already auto-snapshots on
-                         save, to MICROVAULT_HOME/backups/ and
-                         MICROSTACKS_HOME/backups/. Still encrypted with
-                         the same master password — no plaintext copies,
-                         no cloud, nothing leaves this machine.
-  restore [file]          Overwrite the current vault with a backup file.
-                         Lists available backups if none given. Exit and
-                         relaunch afterward to use the restored vault.
-  alias [service]         Override the env var name `env` uses for a
-                         service — many real tools expect something other
-                         than the default SERVICE_API_KEY (e.g. WPScan
-                         wants WPSCAN_API_TOKEN, VirusTotal's CLI wants
-                         VTCLI_APIKEY). Suggests a known name when it
-                         recognizes the service; always accepts any
-                         custom name; blank input clears an existing alias.
-                         e.g. `alias wpscan`
-  mint [service]         Mint a MicroStacks token for a stored service.
-                         e.g. `mint openai`
-  tokens                 List MicroStacks tokens and their usage.
-  revoke [token]         Revoke a MicroStacks token.
-                         e.g. `revoke mstk_openai_4f9a1c2b8e7d`
-  exit                   Quit.
+  add                 Store a new key. The key is always entered in a
+                      separate hidden prompt, never shown on screen.
+  get                 Print a stored key.
+  list                List all services with keys masked.
+  update              Replace a stored key using a hidden prompt.
+  delete              Remove a stored key.
+  profiles            Open the profile manager: list, create/update, delete.
+  import              Bulk-import keys from a text file.
+  backup              Refresh the rolling encrypted backup.
+  restore             Restore the vault from a backup file.
+  alias               Configure the environment-variable name for a service.
+  exit                Quit.
 
 PROFILES
   A profile is a named, non-secret list of service names that scopes
@@ -324,6 +297,65 @@ SHELL EXAMPLE
   eval "$(microvault env --profile mexicosint)"  # export just a profile
   microvault run github -- npx -y @modelcontextprotocol/server-github
 """
+
+
+def _profile_menu():
+    """Open the interactive profile manager."""
+    while True:
+        action = questionary.select(
+            "Profiles:",
+            choices=[
+                Choice("List profiles", "view"),
+                Choice("Create or update a profile", "create"),
+                Choice("Delete a profile", "delete"),
+                Choice("Back", "back"),
+            ],
+        ).ask()
+        if action is None or action == "back":
+            return
+
+        profiles = load_profiles()
+        if action == "view":
+            if not profiles:
+                print(f"{_INFO}No profiles defined yet.{Style.RESET_ALL}")
+                continue
+            selected = questionary.select(
+                "Choose a profile to view:",
+                choices=[Choice(name, name) for name in sorted(profiles)],
+            ).ask()
+            if selected is None:
+                continue
+            services = ", ".join(profiles[selected]) or "(empty)"
+            print(f"{_INFO}{selected}{Style.RESET_ALL}: {services}")
+            continue
+
+        if action == "create":
+            name = input("Profile name: ").strip()
+            if not name:
+                print(f"{_WARN}No profile name entered.{Style.RESET_ALL}")
+                continue
+            raw_services = input(
+                "Services (comma or space separated): "
+            ).strip()
+            services = [service for service in raw_services.replace(",", " ").split() if service]
+            if not services:
+                print(f"{_WARN}No services entered.{Style.RESET_ALL}")
+                continue
+            cmd_profile([name, *services])
+            continue
+
+        if not profiles:
+            print(f"{_INFO}No profiles defined yet.{Style.RESET_ALL}")
+            continue
+        selected = questionary.select(
+            "Choose a profile to delete:",
+            choices=[Choice(name, name) for name in sorted(profiles)],
+        ).ask()
+        if selected is None:
+            continue
+        confirm = input(f"Delete profile '{selected}'? (y/n): ").strip().lower()
+        if confirm == "y":
+            cmd_profile(["delete", selected])
 
 
 def cli():
@@ -345,44 +377,19 @@ def cli():
 
     aliases = load_aliases()
 
-    # MicroStacks is a separate encrypted store; only unlock it the first time
-    # a mint/tokens/revoke command is actually used, so a problem with it
-    # (wrong password against a stray/older file, corruption) can never block
-    # plain vault usage.
-    microstacks = ms_salt = ms_key = None
-
-    def ensure_microstacks_loaded():
-        nonlocal microstacks, ms_salt, ms_key
-        if microstacks is not None:
-            return True
-        existed = os.path.exists(MICROSTACKS_FILE)
-        microstacks, ms_salt, ms_key = load_microstacks(password)
-        if microstacks is None:
-            print(f"{_ERR}MicroStacks: wrong password, or microstacks.enc is corrupted "
-                  f"(unrelated to your vault — this only affects mint/tokens/revoke).")
-            return False
-        if not existed:
-            save_microstacks(microstacks, ms_salt, ms_key)
-        return True
-
     while True:
-        print(f"\n{_INFO}Commands: {_DIM}add, get, list, update, delete, import, backup,"
-              f" restore, alias, mint, tokens, revoke, exit {_INFO}(or hit Enter for a menu)")
-        cmd_line = input(f"{_INFO}> {Style.RESET_ALL}").strip()
+        if not sys.stdin.isatty():
+            print(f"{_ERR}The interactive MicroVault menu requires a terminal.")
+            return
 
-        if not cmd_line:
-            if not sys.stdin.isatty():
-                continue
-            selected = questionary.select(
-                "Choose a command:", choices=MENU_COMMANDS
+        try:
+            cmd = questionary.select(
+                "Choose a command:", choices=MENU_CHOICES
             ).ask()
-            if selected is None:  # Ctrl+C / Esc out of the menu
-                continue
-            cmd_line = selected
-
-        parts = cmd_line.split(None, 1)
-        cmd = parts[0].lower()
-        arg = parts[1].strip() if len(parts) > 1 else None
+        except KeyboardInterrupt:
+            break
+        if cmd is None or cmd == "exit":
+            break
 
         if cmd == 'exit':
             break
@@ -391,14 +398,14 @@ def cli():
             print(HELP_TEXT)
 
         elif cmd == 'add':
-            service = arg or input("Service name (e.g., openai, aws): ").strip()
+            service = input("Service name (e.g., openai, aws): ").strip()
             api_key = getpass.getpass("API Key (input hidden): ").strip()
             vault[service] = api_key
             save_vault(vault, salt, key)
             print(f"{_OK}Saved {service}.")
 
         elif cmd == 'get':
-            service = arg or input("Service name: ").strip()
+            service = input("Service name: ").strip()
             if service in vault:
                 print(f"{_INFO}{service}{Style.RESET_ALL}: {vault[service]}")
             else:
@@ -411,7 +418,7 @@ def cli():
             print(f"{_INFO}-------------------")
 
         elif cmd == 'update':
-            service = arg or input("Service name to update: ").strip()
+            service = input("Service name to update: ").strip()
             if service in vault:
                 api_key = getpass.getpass("New API Key (input hidden): ").strip()
                 vault[service] = api_key
@@ -421,7 +428,7 @@ def cli():
                 print(f"{_ERR}Not found.")
 
         elif cmd == 'delete':
-            service = arg or input("Service name to delete: ").strip()
+            service = input("Service name to delete: ").strip()
             if service in vault:
                 del vault[service]
                 save_vault(vault, salt, key)
@@ -430,7 +437,7 @@ def cli():
                 print(f"{_ERR}Not found.")
 
         elif cmd == 'import':
-            path = os.path.expanduser(arg or input("Path to key file: ").strip())
+            path = os.path.expanduser(input("Path to key file: ").strip())
             if not os.path.isfile(path):
                 print(f"{_ERR}File not found.")
             else:
@@ -457,9 +464,6 @@ def cli():
             # this just forces an extra one on demand (e.g. before something risky).
             snapshot_backup(VAULT_FILE)
             print(f"{_OK}Backed up: {VAULT_FILE}")
-            if os.path.exists(MICROSTACKS_FILE):
-                snapshot_backup(MICROSTACKS_FILE)
-                print(f"{_OK}Backed up: {MICROSTACKS_FILE}")
 
         elif cmd == 'restore':
             backup_dir = os.path.join(MICROVAULT_HOME, "backups")
@@ -470,7 +474,7 @@ def cli():
                 print(f"{_INFO}Available backups:")
                 for i, name in enumerate(backups, 1):
                     print(f"  {i}. {name}")
-                choice = arg or input("Backup filename (or number) to restore: ").strip()
+                choice = input("Backup filename (or number) to restore: ").strip()
                 if choice.isdigit() and 1 <= int(choice) <= len(backups):
                     choice = backups[int(choice) - 1]
                 chosen_path = os.path.join(backup_dir, choice)
@@ -487,7 +491,7 @@ def cli():
                         print(f"{_WARN}Cancelled.")
 
         elif cmd == 'alias':
-            service = arg or input("Service name to set an alias for: ").strip()
+            service = input("Service name to set an alias for: ").strip()
             if service not in vault:
                 print(f"{_ERR}Service not found in vault. Add it first.")
             else:
@@ -516,45 +520,8 @@ def cli():
                     save_aliases(aliases)
                     print(f"{_OK}{service} will now export as {aliases[service]}.")
 
-        elif cmd == 'mint':
-            if not ensure_microstacks_loaded():
-                continue
-            service = arg or input("Service name to mint a MicroStack token for: ").strip()
-            if service not in vault:
-                print(f"{_ERR}Service not found in vault. Add it first.")
-            else:
-                ms_token = generate_microstack_token(service)
-                microstacks[ms_token] = {
-                    "service": service,
-                    "created": datetime.now(timezone.utc).isoformat(),
-                    "tokens_used": 0,
-                }
-                save_microstacks(microstacks, ms_salt, ms_key)
-                print(f"{_OK}Minted for {service}:\n{Style.RESET_ALL}{ms_token}")
-                print(f"{_WARN}Save this now — it will only be shown masked from here on.")
-
-        elif cmd == 'tokens':
-            if not ensure_microstacks_loaded():
-                continue
-            print(f"\n{_INFO}--- MicroStacks ---")
-            for ms_token, meta in microstacks.items():
-                stacks = meta["tokens_used"] / TOKENS_PER_MICROSTACK
-                print(f"{_DIM}{mask_key(ms_token)}{Style.RESET_ALL}  "
-                      f"service={_INFO}{meta['service']}{Style.RESET_ALL}  "
-                      f"created={meta['created']}  "
-                      f"usage={_OK}{stacks:.3f} MicroStacks{Style.RESET_ALL} ({meta['tokens_used']} tokens)")
-            print(f"{_INFO}-------------------")
-
-        elif cmd == 'revoke':
-            if not ensure_microstacks_loaded():
-                continue
-            ms_token = arg or input("MicroStack token to revoke (full value): ").strip()
-            if ms_token in microstacks:
-                del microstacks[ms_token]
-                save_microstacks(microstacks, ms_salt, ms_key)
-                print(f"{_OK}Revoked.")
-            else:
-                print(f"{_ERR}Not found.")
+        elif cmd == 'profiles':
+            _profile_menu()
 
         else:
             print(f"{_ERR}Unknown command.")

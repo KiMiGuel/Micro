@@ -11,12 +11,14 @@ Current as of 2026-09-24.
 - `microvault` on PATH is an **editable install** (`pip install -e .`) pointing directly at this repo (`/home/KaliMa/MicroVault/microvault/__init__.py`) — local edits are live immediately, no reinstall needed. `pip show microvault` prints a stale version string; that's cached dist-info metadata only, cosmetic, doesn't affect behavior.
 
 ## Features
+- Interactive vault opens directly into an arrow-key selection menu; the redundant text-input-then-menu loop was removed.
+- Added visible `Profiles` menu with view, create/update, and delete actions.
 - Core vault: add/get/list/update/delete/import/backup/restore/alias, `microvault env [service]`, `microvault run svc -- cmd`, Python API (`from microvault import vault`).
 - Profiles (added 2026-09-24): `microvault profile <name> <service...>`, `microvault env --profile <name> [--json]`, `vault.profile_services()`/`vault.env_profile()` — scopes what a calling tool sees to a named subset instead of the whole vault. `--json` batches a whole profile into one password prompt instead of one per key.
-- MicroStacks (separate encrypted store, `mint`/`tokens`/`revoke`) — pre-existing, not touched this session.
 
 ## Known integrations
-- MeXiCOSINT: auto-detects MicroVault on launch (no flag needed), uses a `mexicosint` profile (`geoapify`, `opencage_api`, `ipgs`, `numverify_api`, `abstract_api`) when defined, batched single-password-prompt fetch via `microvault env --profile mexicosint --json`. Falls back to per-service fetch if the profile isn't set up.
+- MeXiCOSINT: auto-detects MicroVault on launch (no flag needed) and requires the `mexicosint` profile (`geoapify`, `opencage_api`, `ipgs`, `numverify_api`, `abstract_api`). It fetches that profile in one call via `microvault env --profile mexicosint --json`.
 
-## Part of a larger vision
-User is building a connected "Micro" ecosystem (MicroVault, MicroStacks, MeXiCOSINT, future Indepentest tools) — see the `indepentest_micro_ecosystem_vision` Claude Code memory. The profile feature is the reusable per-tool scoping pattern for future tools joining the vault.
+## Standalone product
+
+MicroVault is a standalone local vault. MeXiCOSINT is an optional external consumer of its public profile/env API; MicroVault does not depend on or manage any other Micro project.
