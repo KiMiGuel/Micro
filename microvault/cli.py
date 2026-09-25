@@ -330,14 +330,29 @@ def _profile_menu(vault):
             if not profiles:
                 print(f"{_INFO}No profiles defined yet.{Style.RESET_ALL}")
                 continue
+            print(f"{_INFO}Profiles and included services:{Style.RESET_ALL}")
+            for name in sorted(profiles):
+                services = profiles[name]
+                print(f"  {name} ({len(services)} service{'s' if len(services) != 1 else ''}):")
+                if services:
+                    for service in services:
+                        print(f"    - {service}")
+                else:
+                    print("    (empty)")
             selected = questionary.select(
-                "Choose a profile to view:",
-                choices=[Choice(name, name) for name in sorted(profiles)],
+                "Choose a profile to inspect:",
+                choices=[
+                    Choice(
+                        f"{name} ({len(profiles[name])} service{'s' if len(profiles[name]) != 1 else ''})",
+                        name,
+                    )
+                    for name in sorted(profiles)
+                ],
             ).ask()
             if selected is None:
                 continue
             services = ", ".join(profiles[selected]) or "(empty)"
-            print(f"{_INFO}{selected}{Style.RESET_ALL}: {services}")
+            print(f"{_INFO}Selected profile '{selected}':{Style.RESET_ALL} {services}")
             continue
 
         if action == "create":
